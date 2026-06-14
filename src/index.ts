@@ -115,9 +115,9 @@ WebGL2　Fluid Simulation<br>Navier-Stokes　方程式<br>速度場　壓力場�
 
 /* ── Ink color palette ───────────────────── */
 const INKS = [
-  [0.040, 0.040, 0.060],   // 松煙（帶藍深黑）
-  [0.030, 0.150, 0.180],   // 青墨
-  [0.220, 0.040, 0.040],   // 朱墨
+  [0.040, 0.040, 0.060],   // 松煙（帶藍極深黑）
+  [0.030, 0.120, 0.160],   // 青墨
+  [0.180, 0.030, 0.030],   // 朱墨（深）
 ];
 let inkIdx = 0;
 
@@ -299,7 +299,7 @@ void main(){
   fragColor = b + vec4(uColor * s, s);
 }\`;
 
-/* Final display pass — 3-layer radial blur + velocity visualization */
+/* Final display pass — velocity field base + ink on top */
 const FS_DISPLAY = \`#version 300 es
 precision highp float;
 uniform sampler2D uDye;
@@ -313,8 +313,11 @@ void main(){
   if (uCalliMode) {
     /* 書法 mode: no blur, crisp strokes */
     d = texture(uDye, vUv);
+    float inkAlpha = smoothstep(0.0, 0.3, d.a * 3.8);
+    vec3  inkColor = (d.a > 0.0005) ? d.rgb / d.a : paper;
+    fragColor = vec4(mix(paper, inkColor, inkAlpha), 1.0);
   } else {
-    /* 墨流 mode: 3-layer radial blur for watercolour halo */
+    /* 墨流 mode: 3-layer radial blur */
     vec2 ts  = 1.0 / vec2(textureSize(uDye, 0));
     vec4 d0 = texture(uDye, vUv);
     vec4 d1 = ( texture(uDye, vUv + vec2(ts.x*3.0, 0.0))
@@ -326,20 +329,23 @@ void main(){
               + texture(uDye, vUv + vec2(0.0, ts.y*7.0))
               + texture(uDye, vUv - vec2(0.0, ts.y*7.0)) ) * 0.25;
     d = d0*0.50 + d1*0.32 + d2*0.18;
-  }
-  float alpha = smoothstep(0.0, 0.3, d.a * 3.8);
-  vec3 ink    = (d.a > 0.0005) ? d.rgb / d.a : paper;
-  vec3 color  = mix(paper, ink, alpha);
 
-  if (!uCalliMode) {
-    /* Velocity field tint — blue-grey shimmer in fast regions */
-    vec2 vel    = texture(uVelocity, vUv).xy;
-    float vMag  = length(vel) * 14.0;
-    vec3 velCol = mix(vec3(0.88, 0.87, 0.84), vec3(0.65, 0.70, 0.80), clamp(vMag, 0.0, 1.0));
-    color = mix(color, velCol, clamp(vMag * 0.55, 0.0, 0.4) * (1.0 - alpha));
-  }
+    /* Velocity field — independent base layer */
+    vec2  vel      = texture(uVelocity, vUv).xy;
+    float velMag   = clamp(length(vel) * 18.0, 0.0, 1.0);
+    vec3  velColor = mix(
+      vec3(0.925, 0.918, 0.906),
+      vec3(0.62,  0.68,  0.78),
+      velMag
+    );
 
-  fragColor = vec4(color, 1.0);
+    /* Ink on top */
+    float inkAlpha = smoothstep(0.0, 0.3, d.a * 3.8);
+    vec3  inkColor = d.rgb / max(d.a, 0.001);
+
+    vec3 final = mix(velColor, inkColor, inkAlpha);
+    fragColor = vec4(final, 1.0);
+  }
 }\`;
 
 /* ═══════════════════════════════════════════
@@ -774,7 +780,7 @@ function step() {
       splatVelocity(ux, uy, fx * 9.0, fy * 9.0, 0.0005);
     } else if (!isDown && currentMode !== 'calli') {
       /* Hover only (fluid mode): gentle velocity × 1.8 */
-      splatVelocity(ux, uy, fx * 3.24, fy * 3.24, 0.0015);
+      splatVelocity(ux, uy, fx * 8.1, fy * 8.1, 0.0015);
     }
   }
   pmx = mx; pmy = my;
