@@ -334,9 +334,9 @@ void main(){
   if (!uCalliMode) {
     /* Velocity field tint — blue-grey shimmer in fast regions */
     vec2 vel    = texture(uVelocity, vUv).xy;
-    float vMag  = length(vel) * 8.0;
-    vec3 velCol = mix(vec3(0.88, 0.87, 0.84), vec3(0.72, 0.76, 0.82), clamp(vMag, 0.0, 1.0));
-    color = mix(color, velCol, clamp(vMag * 0.35, 0.0, 0.4) * (1.0 - alpha));
+    float vMag  = length(vel) * 14.0;
+    vec3 velCol = mix(vec3(0.88, 0.87, 0.84), vec3(0.65, 0.70, 0.80), clamp(vMag, 0.0, 1.0));
+    color = mix(color, velCol, clamp(vMag * 0.55, 0.0, 0.4) * (1.0 - alpha));
   }
 
   fragColor = vec4(color, 1.0);
@@ -531,7 +531,7 @@ window.addEventListener('mousemove', e => {
       const ux = mx / W, uy = 1.0 - my / H;
       const dvx = (mx - pmx) / W;
       const dvy = -(my - pmy) / H;
-      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 1.2, 0.55);
+      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 0.7, 0.55);
       splatVelocity(ux, uy, dvx * 6.0, dvy * 6.0, 0.0005);
     } else {
       /* Calli mode: interpolated splats */
@@ -582,10 +582,10 @@ window.addEventListener('mousedown', e => {
       const oy = Math.sin(a) * 0.03;
       const vx = Math.cos(a) * 0.3 * 1.8;
       const vy = Math.sin(a) * 0.3 * 1.8;
-      splatDye(ux + ox, uy + oy, INKS[inkIdx], splatR * 0.8, 0.6);
+      splatDye(ux + ox, uy + oy, INKS[inkIdx], splatR * 0.6, 0.6);
       splatVelocity(ux + ox, uy + oy, vx, vy, 0.0006);
     }
-    splatDye(ux, uy, INKS[inkIdx], splatR * 1.2, 1.0);
+    splatDye(ux, uy, INKS[inkIdx], splatR * 0.9, 1.0);
   } else {
     /* Calli mode: single drop + random velocity */
     splatDye(ux, uy, INKS[inkIdx], 0.0006 * getRadiusMult(), 1.0);
@@ -721,9 +721,8 @@ function setMode(mode) {
     sideRight.style.display    = 'none';
   } else {
     /* 墨流 mode */
-    DISS_DYE     = 0.972;
-    DISS_VEL     = 0.970;
-    DISS_DYE     = 0.960;
+    DISS_DYE     = 0.950;
+    DISS_VEL     = 0.975;
     dyeDiffusion = 0.42;
     calliMode    = false;
     btnFluid.style.background = 'rgba(40,20,0,0.12)';
