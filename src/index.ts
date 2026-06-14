@@ -139,8 +139,9 @@ function getRadiusMult() {
   return calliMode ? BRUSH_SCALE[brushSize] : 0.6;
 }
 
-/* Interpolated-splat tracking */
+/* Interpolated-splat tracking (calli mode) */
 let lastSplatX = -1, lastSplatY = -1;
+let frameCount = 0;
 
 /* ── Canvas ──────────────────────────────── */
 const canvas = document.getElementById('c');
@@ -523,21 +524,41 @@ window.addEventListener('mousemove', e => {
   cursorEl.style.left = mx + 'px';
   cursorEl.style.top  = my + 'px';
 
-  /* Interpolated dye splat when dragging */
-  if (isDown && lastSplatX >= 0) {
-    const W = canvas.width, H = canvas.height;
-    const dx = mx - lastSplatX;
-    const dy = my - lastSplatY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const steps = Math.max(1, Math.floor(dist / 2));
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const ix = lastSplatX + dx * t;
-      const iy = lastSplatY + dy * t;
-      splatDye(ix / W, 1.0 - iy / H, INKS[inkIdx], 0.0003 * getRadiusMult(), 1.0);
+  if (isDown) {
+    if (currentMode !== 'calli') {
+      /* Fluid mode: single large-radius splat every 3 frames, radial velocity */
+      if (frameCount % 3 === 0) {
+        const W = canvas.width, H = canvas.height;
+        const ux = mx / W, uy = 1.0 - my / H;
+        const dvx = (mx - pmx) / W;
+        const dvy = -(my - pmy) / H;
+        const spd = Math.sqrt(dvx * dvx + dvy * dvy);
+        const angle = Math.random() * Math.PI * 2;
+        const radialVx = Math.cos(angle) * spd * 0.4;
+        const radialVy = Math.sin(angle) * spd * 0.4;
+        const finalVx = (radialVx * 0.6 + dvx * 0.4) * 9.0;
+        const finalVy = (radialVy * 0.6 + dvy * 0.4) * 9.0;
+        splatDye(ux, uy, INKS[inkIdx], 0.0003 * 2.5, 1.0);
+        splatVelocity(ux, uy, finalVx, finalVy, 0.0005);
+      }
+    } else {
+      /* Calli mode: interpolated splats */
+      if (lastSplatX >= 0) {
+        const W = canvas.width, H = canvas.height;
+        const dx = mx - lastSplatX;
+        const dy = my - lastSplatY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const steps = Math.max(1, Math.floor(dist / 2));
+        for (let i = 1; i <= steps; i++) {
+          const t = i / steps;
+          const ix = lastSplatX + dx * t;
+          const iy = lastSplatY + dy * t;
+          splatDye(ix / W, 1.0 - iy / H, INKS[inkIdx], 0.0003 * getRadiusMult(), 1.0);
+        }
+      }
+      lastSplatX = mx; lastSplatY = my;
     }
   }
-  if (isDown) { lastSplatX = mx; lastSplatY = my; }
 
   /* Hover smoke: fluid mode only, no press */
   if (!isDown && currentMode !== 'calli') {
@@ -557,13 +578,28 @@ window.addEventListener('mousedown', e => {
   pmx = mx; pmy = my;
   lastSplatX = mx; lastSplatY = my;
   hintEl.style.opacity = '0';
-  /* Instant ink drop: large dye splat + tiny random velocity */
   const W = canvas.width, H = canvas.height;
   const ux = mx / W, uy = 1.0 - my / H;
-  splatDye(ux, uy, INKS[inkIdx], 0.0006 * getRadiusMult(), 1.0);
-  const a = Math.random() * Math.PI * 2;
-  splatVelocity(ux, uy,
-    Math.cos(a) * 0.003, Math.sin(a) * 0.003, 0.0008);
+
+  if (currentMode !== 'calli') {
+    /* Fluid mode: 5 radial splats + center burst */
+    const splatR = 0.0006 * 0.6;
+    for (let i = 0; i < 5; i++) {
+      const a = (Math.PI * 2 / 5) * i;
+      const ox = Math.cos(a) * 0.03;
+      const oy = Math.sin(a) * 0.03;
+      const vx = Math.cos(a) * 0.3 * 1.8;
+      const vy = Math.sin(a) * 0.3 * 1.8;
+      splatDye(ux + ox, uy + oy, INKS[inkIdx], splatR * 0.8, 0.6);
+      splatVelocity(ux + ox, uy + oy, vx, vy, 0.0006);
+    }
+    splatDye(ux, uy, INKS[inkIdx], splatR * 1.2, 1.0);
+  } else {
+    /* Calli mode: single drop + random velocity */
+    splatDye(ux, uy, INKS[inkIdx], 0.0006 * getRadiusMult(), 1.0);
+    const a = Math.random() * Math.PI * 2;
+    splatVelocity(ux, uy, Math.cos(a) * 0.003 * 1.8, Math.sin(a) * 0.003 * 1.8, 0.0008);
+  }
 });
 
 window.addEventListener('mouseup',    () => { isDown = false; lastSplatX = -1; lastSplatY = -1; });
@@ -727,6 +763,7 @@ setMode('calli');
    Main simulation step
    ═══════════════════════════════════════════ */
 function step() {
+  frameCount++;
   const W = canvas.width, H = canvas.height;
 
   /* ── Mouse interaction ─── */
@@ -741,12 +778,12 @@ function step() {
     const fx = Math.max(-0.05, Math.min(0.05,  dx / W));
     const fy = Math.max(-0.05, Math.min(0.05, -dy / H));
 
-    if (isDown) {
-      /* Press + drag: velocity impulse (dye is handled by mousemove interpolation) */
-      splatVelocity(ux, uy, fx * 5.0, fy * 5.0, 0.0005);
-    } else if (currentMode !== 'calli') {
-      /* Hover only (fluid mode): gentle velocity disturbance, no dye */
-      splatVelocity(ux, uy, fx * 1.8, fy * 1.8, 0.0015);
+    if (isDown && currentMode === 'calli') {
+      /* Calli press + drag: velocity impulse × 1.8 */
+      splatVelocity(ux, uy, fx * 9.0, fy * 9.0, 0.0005);
+    } else if (!isDown && currentMode !== 'calli') {
+      /* Hover only (fluid mode): gentle velocity × 1.8 */
+      splatVelocity(ux, uy, fx * 3.24, fy * 3.24, 0.0015);
     }
   }
   pmx = mx; pmy = my;
