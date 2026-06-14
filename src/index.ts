@@ -47,7 +47,8 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
   cursor:pointer;transition:transform .18s,border-color .2s
 }
 .swatch.sel{border-color:rgba(40,20,0,0.50);transform:scale(1.28)}
-#cursor{position:fixed;pointer-events:none;z-index:30;transform:translate(-50%,-50%)}
+#cursor{position:fixed;pointer-events:none;z-index:30;transform:translate(-50%,-50%);transition:opacity .15s}
+button,a,.swatch,.brush-opt{cursor:pointer}
 #no-webgl{
   position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
   font-family:serif;font-size:16px;color:#3a2810;background:#f0ead8;z-index:999;
@@ -494,12 +495,18 @@ function getPos(e) {
 }
 
 window.addEventListener('mousemove', e => {
+  if (e.target !== canvas) {
+    cursorEl.style.opacity = '0';
+    return;
+  }
+  cursorEl.style.opacity = '1';
   [mx, my] = getPos(e);
   cursorEl.style.left = mx + 'px';
   cursorEl.style.top  = my + 'px';
 });
 
 window.addEventListener('mousedown', e => {
+  if (e.target !== canvas) return;
   isDown = true;
   [mx, my] = getPos(e);
   pmx = mx; pmy = my;
@@ -517,6 +524,7 @@ window.addEventListener('mouseup',    () => isDown = false);
 window.addEventListener('mouseleave', () => isDown = false);
 
 window.addEventListener('touchstart', e => {
+  if (e.target !== canvas) return;
   e.preventDefault();
   isDown = true;
   [mx, my] = getPos(e);
@@ -532,6 +540,7 @@ window.addEventListener('touchstart', e => {
 window.addEventListener('touchend',  () => isDown = false);
 
 window.addEventListener('touchmove', e => {
+  if (e.target !== canvas) return;
   e.preventDefault();
   [mx, my] = getPos(e);
   cursorEl.style.left = mx + 'px';
