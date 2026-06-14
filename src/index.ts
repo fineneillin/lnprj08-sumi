@@ -65,6 +65,16 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 <div id="hint" class="vtext">輕撫紙面攪墨&emsp;｜&emsp;按住滴墨</div>
 <div id="seal">墨</div>
 
+<!-- 左側說明文字 -->
+<div style="position:fixed;left:28px;top:42%;writing-mode:vertical-rl;font-family:serif;font-size:10px;letter-spacing:.25em;color:rgba(40,20,0,0.22);line-height:2.2;pointer-events:none;">
+輕撫水面<br>墨韻自生<br>｜<br>按住注墨<br>拖曳成渦<br>放手淡出
+</div>
+
+<!-- 右側技術說明 -->
+<div style="position:fixed;right:22px;top:38%;writing-mode:vertical-rl;font-family:serif;font-size:9px;letter-spacing:.2em;color:rgba(40,20,0,0.18);line-height:2.4;pointer-events:none;">
+WebGL2　Fluid Simulation<br>Navier-Stokes　方程式<br>速度場　壓力場　染料場<br>512×512　浮點紋理<br>即時　60Hz　渲染
+</div>
+
 <div id="palette">
   <div class="swatch sel" id="sw0" style="background:#100b05" title="松煙"></div>
   <div class="swatch"     id="sw1" style="background:#0e2e22" title="青墨"></div>
@@ -161,7 +171,7 @@ void main(){
                  + texture(uSource, vUv - vec2(ts.x,  0.0))
                  + texture(uSource, vUv + vec2(0.0,  ts.y))
                  + texture(uSource, vUv - vec2(0.0,  ts.y));
-  result = mix(result, neighbors * 0.25, 0.18);
+  result = mix(result, neighbors * 0.25, 0.42);
   fragColor = result;
 }\`;
 
@@ -250,23 +260,30 @@ void main(){
   fragColor = b + vec4(uColor * s, s);
 }\`;
 
-/* Final display pass — blurred sampling + smoothstep alpha */
+/* Final display pass — 3-layer radial blur + smoothstep alpha */
 const FS_DISPLAY = \`#version 300 es
 precision highp float;
 uniform sampler2D uDye;
 in vec2 vUv;
 out vec4 fragColor;
 void main(){
-  vec3  bg = vec3(0.941, 0.918, 0.847);   /* #f0ead8 */
-  vec2  ts = 1.0 / vec2(textureSize(uDye, 0));
-  /* 5-tap cross blur on dye for softer visual edges */
-  vec4 d  = texture(uDye, vUv) * 0.40
-           + texture(uDye, vUv + vec2(ts.x,  0.0)) * 0.15
-           + texture(uDye, vUv - vec2(ts.x,  0.0)) * 0.15
-           + texture(uDye, vUv + vec2(0.0,  ts.y)) * 0.15
-           + texture(uDye, vUv - vec2(0.0,  ts.y)) * 0.15;
-  /* smoothstep gives natural feathered edge instead of hard clamp */
-  float a  = smoothstep(0.0, 0.4, d.a * 2.5);
+  vec3 bg  = vec3(0.941, 0.918, 0.847);   /* #f0ead8 */
+  vec2 ts  = 1.0 / vec2(textureSize(uDye, 0));
+  /* Layer 0 — centre */
+  vec4 d0 = texture(uDye, vUv);
+  /* Layer 1 — radius 3 texels */
+  vec4 d1 = ( texture(uDye, vUv + vec2(ts.x*3.0, 0.0))
+            + texture(uDye, vUv - vec2(ts.x*3.0, 0.0))
+            + texture(uDye, vUv + vec2(0.0, ts.y*3.0))
+            + texture(uDye, vUv - vec2(0.0, ts.y*3.0)) ) * 0.25;
+  /* Layer 2 — radius 7 texels (wide water-diffusion halo) */
+  vec4 d2 = ( texture(uDye, vUv + vec2(ts.x*7.0, 0.0))
+            + texture(uDye, vUv - vec2(ts.x*7.0, 0.0))
+            + texture(uDye, vUv + vec2(0.0, ts.y*7.0))
+            + texture(uDye, vUv - vec2(0.0, ts.y*7.0)) ) * 0.25;
+  vec4 d  = d0*0.50 + d1*0.32 + d2*0.18;
+  /* wider smoothstep for feathered edge */
+  float a  = smoothstep(0.0, 0.55, d.a * 1.8);
   vec3 ink = (d.a > 0.0005) ? d.rgb / d.a : bg;
   fragColor = vec4(mix(bg, ink, a), 1.0);
 }\`;
