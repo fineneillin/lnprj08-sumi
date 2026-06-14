@@ -66,12 +66,12 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 <div id="seal">墨</div>
 
 <!-- 左側說明文字 -->
-<div style="position:fixed;left:28px;top:42%;writing-mode:vertical-rl;font-family:serif;font-size:10px;letter-spacing:.25em;color:rgba(40,20,0,0.22);line-height:2.2;pointer-events:none;">
+<div style="position:fixed;left:28px;top:42%;writing-mode:vertical-rl;font-family:serif;font-size:10px;letter-spacing:.25em;color:rgba(40,20,0,0.55);line-height:2.2;pointer-events:none;">
 輕撫水面<br>墨韻自生<br>｜<br>按住注墨<br>拖曳成渦<br>放手淡出
 </div>
 
 <!-- 右側技術說明 -->
-<div style="position:fixed;right:22px;top:38%;writing-mode:vertical-rl;font-family:serif;font-size:9px;letter-spacing:.2em;color:rgba(40,20,0,0.18);line-height:2.4;pointer-events:none;">
+<div style="position:fixed;right:22px;top:38%;writing-mode:vertical-rl;font-family:serif;font-size:9px;letter-spacing:.2em;color:rgba(40,20,0,0.48);line-height:2.4;pointer-events:none;">
 WebGL2　Fluid Simulation<br>Navier-Stokes　方程式<br>速度場　壓力場　染料場<br>512×512　浮點紋理<br>即時　60Hz　渲染
 </div>
 
