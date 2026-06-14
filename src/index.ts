@@ -213,6 +213,44 @@ void main(){
   fragColor = result;
 }\`;
 
+/* Vorticity – curl pass (compute rotation at each point) */
+const FS_CURL = \`#version 300 es
+precision highp float;
+uniform sampler2D uVelocity;
+uniform vec2      uTexelSize;
+in vec2 vUv;
+out vec4 fragColor;
+void main(){
+  float L = texture(uVelocity, vUv - vec2(uTexelSize.x, 0.0)).y;
+  float R = texture(uVelocity, vUv + vec2(uTexelSize.x, 0.0)).y;
+  float T = texture(uVelocity, vUv + vec2(0.0, uTexelSize.y)).x;
+  float B = texture(uVelocity, vUv - vec2(0.0, uTexelSize.y)).x;
+  fragColor = vec4(R - L - T + B, 0.0, 0.0, 1.0);
+}\`;
+
+/* Vorticity – confinement pass (convert curl to velocity force) */
+const FS_VORTICITY = \`#version 300 es
+precision highp float;
+uniform sampler2D uVelocity;
+uniform sampler2D uCurl;
+uniform vec2      uTexelSize;
+uniform float     uCurlStrength;
+uniform float     uDt;
+in vec2 vUv;
+out vec4 fragColor;
+void main(){
+  float L = texture(uCurl, vUv - vec2(uTexelSize.x, 0.0)).x;
+  float R = texture(uCurl, vUv + vec2(uTexelSize.x, 0.0)).x;
+  float T = texture(uCurl, vUv + vec2(0.0, uTexelSize.y)).x;
+  float B = texture(uCurl, vUv - vec2(0.0, uTexelSize.y)).x;
+  float C = texture(uCurl, vUv).x;
+  vec2 force = vec2(abs(T) - abs(B), abs(R) - abs(L));
+  float len  = max(length(force), 0.0001);
+  force = (force / len) * uCurlStrength * C;
+  vec2 vel = texture(uVelocity, vUv).xy;
+  fragColor = vec4(vel + force * uDt, 0.0, 1.0);
+}\`;
+
 /* Pass 2a – Divergence */
 const FS_DIV = \`#version 300 es
 precision highp float;
@@ -326,7 +364,7 @@ void main(){
               + texture(uDye, vUv - vec2(0.0, ts.y*7.0)) ) * 0.25;
     d = d0*0.50 + d1*0.32 + d2*0.18;
   }
-  float alpha = smoothstep(0.0, 0.55, d.a * 1.8);
+  float alpha = smoothstep(0.0, 0.3, d.a * 3.5);
   vec3 ink    = (d.a > 0.0005) ? d.rgb / d.a : paper;
   vec3 color  = mix(paper, ink, alpha);
 
@@ -415,6 +453,8 @@ function doubleFBO(w, h, iFmt, fmt, type, filter) {
 /* ── Compile programs ────────────────────── */
 const pAdvect    = createProgram(VS, FS_ADVECT);
 const pDyeAdvect = createProgram(VS, FS_DYE_ADVECT);
+const pCurl      = createProgram(VS, FS_CURL);
+const pVorticity = createProgram(VS, FS_VORTICITY);
 const pDiv       = createProgram(VS, FS_DIV);
 const pPressure  = createProgram(VS, FS_PRESSURE);
 const pGrad      = createProgram(VS, FS_GRAD);
@@ -423,12 +463,13 @@ const pDyeSplat  = createProgram(VS, FS_DYE_SPLAT);
 const pDisplay   = createProgram(VS, FS_DISPLAY);
 
 /* ── Field FBOs ──────────────────────────── */
-let velocity, pressure, divFBO, dye;
+let velocity, pressure, divFBO, dye, curlFBO;
 
 function initFBOs() {
   velocity = doubleFBO(SIM, SIM, gl.RG16F,   gl.RG,   gl.HALF_FLOAT, FILTER);
   pressure = doubleFBO(SIM, SIM, gl.R16F,    gl.RED,  gl.HALF_FLOAT, FILTER);
   divFBO   = createFBO(SIM, SIM, gl.R16F,    gl.RED,  gl.HALF_FLOAT, gl.NEAREST);
+  curlFBO  = createFBO(SIM, SIM, gl.R16F,    gl.RED,  gl.HALF_FLOAT, gl.NEAREST);
   dye      = doubleFBO(SIM, SIM, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, FILTER);
 }
 
@@ -538,6 +579,17 @@ window.addEventListener('mousemove', e => {
     }
   }
   if (isDown) { lastSplatX = mx; lastSplatY = my; }
+
+  /* Hover smoke: fluid mode only, no press */
+  if (!isDown && currentMode !== 'calli') {
+    const W = canvas.width, H = canvas.height;
+    const ddx = mx - pmx, ddy = my - pmy;
+    const spd = Math.sqrt(ddx * ddx + ddy * ddy);
+    if (spd > 0.5) {
+      const ux = mx / W, uy = 1.0 - my / H;
+      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 0.4, 0.012);
+    }
+  }
 });
 
 window.addEventListener('mousedown', e => {
@@ -684,8 +736,8 @@ function setMode(mode) {
   } else {
     /* 墨流 mode */
     DISS_DYE     = 0.972;
-    DISS_VEL     = 0.980;
-    DISS_DYE     = 0.978;
+    DISS_VEL     = 0.988;
+    DISS_DYE     = 0.985;
     dyeDiffusion = 0.42;
     calliMode    = false;
     btnFluid.style.background = 'rgba(40,20,0,0.12)';
@@ -788,6 +840,28 @@ function step() {
   bindTex(velocity.read.tex, 1);
   blit(velocity.write);
   velocity.swap();
+
+  /* ── Pass 3b: Vorticity confinement (fluid mode only) ─── */
+  if (!calliMode) {
+    const ts = [1.0 / SIM, 1.0 / SIM];
+    /* Curl */
+    pCurl.use();
+    gl.uniform1i(pCurl.u('uVelocity'), 0);
+    gl.uniform2f(pCurl.u('uTexelSize'), ts[0], ts[1]);
+    bindTex(velocity.read.tex, 0);
+    blit(curlFBO);
+    /* Confinement */
+    pVorticity.use();
+    gl.uniform1i(pVorticity.u('uVelocity'),     0);
+    gl.uniform1i(pVorticity.u('uCurl'),          1);
+    gl.uniform2f(pVorticity.u('uTexelSize'),     ts[0], ts[1]);
+    gl.uniform1f(pVorticity.u('uCurlStrength'),  28.0);
+    gl.uniform1f(pVorticity.u('uDt'),            0.016);
+    bindTex(velocity.read.tex, 0);
+    bindTex(curlFBO.tex,       1);
+    blit(velocity.write);
+    velocity.swap();
+  }
 
   /* ── Pass 4: Render dye to canvas ─── */
   pDisplay.use();
