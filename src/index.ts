@@ -89,8 +89,8 @@ let inkIdx = 0;
 
 /* ── Simulation constants ────────────────── */
 const SIM      = 512;
-const DISS_VEL = 0.960;
-const DISS_DYE = 0.962;
+const DISS_VEL = 0.965;
+const DISS_DYE = 0.972;
 const DISS_P   = 0.8;
 const P_ITER   = 30;
 
@@ -155,18 +155,12 @@ void main(){
   vec2 vel    = texture(uVelocity, vUv).xy;
   vec2 coord  = vUv - vel;
   vec4 result = uDissipation * texture(uSource, coord);
-  /* 8-tap diffusion — cross + diagonals for cross-colour blending */
-  vec4 nb = (
-    texture(uSource, vUv + vec2(ts.x,  0.0   )) +
-    texture(uSource, vUv - vec2(ts.x,  0.0   )) +
-    texture(uSource, vUv + vec2(0.0,   ts.y  )) +
-    texture(uSource, vUv - vec2(0.0,   ts.y  )) +
-    texture(uSource, vUv + vec2( ts.x,  ts.y)) * 0.7 +
-    texture(uSource, vUv + vec2(-ts.x,  ts.y)) * 0.7 +
-    texture(uSource, vUv + vec2( ts.x, -ts.y)) * 0.7 +
-    texture(uSource, vUv + vec2(-ts.x, -ts.y)) * 0.7
-  ) / 5.8;
-  result = mix(result, nb, 0.55);
+  /* Laplacian diffusion — softens colour boundaries */
+  vec4 neighbors = texture(uSource, vUv + vec2(ts.x,  0.0))
+                 + texture(uSource, vUv - vec2(ts.x,  0.0))
+                 + texture(uSource, vUv + vec2(0.0,  ts.y))
+                 + texture(uSource, vUv - vec2(0.0,  ts.y));
+  result = mix(result, neighbors * 0.25, 0.18);
   fragColor = result;
 }\`;
 
@@ -255,30 +249,23 @@ void main(){
   fragColor = b + vec4(uColor * s, s);
 }\`;
 
-/* Final display pass — 3-layer radial blur + smoothstep alpha */
+/* Final display pass — blurred sampling + smoothstep alpha */
 const FS_DISPLAY = \`#version 300 es
 precision highp float;
 uniform sampler2D uDye;
 in vec2 vUv;
 out vec4 fragColor;
 void main(){
-  vec3 bg  = vec3(0.941, 0.918, 0.847);   /* #f0ead8 */
-  vec2 ts  = 1.0 / vec2(textureSize(uDye, 0));
-  /* Layer 0 — centre */
-  vec4 d0 = texture(uDye, vUv);
-  /* Layer 1 — radius 2 texels */
-  vec4 d1 = ( texture(uDye, vUv + vec2(ts.x*2.0, 0.0))
-            + texture(uDye, vUv - vec2(ts.x*2.0, 0.0))
-            + texture(uDye, vUv + vec2(0.0, ts.y*2.0))
-            + texture(uDye, vUv - vec2(0.0, ts.y*2.0)) ) * 0.25;
-  /* Layer 2 — radius 5 texels (wide water-diffusion halo) */
-  vec4 d2 = ( texture(uDye, vUv + vec2(ts.x*5.0, 0.0))
-            + texture(uDye, vUv - vec2(ts.x*5.0, 0.0))
-            + texture(uDye, vUv + vec2(0.0, ts.y*5.0))
-            + texture(uDye, vUv - vec2(0.0, ts.y*5.0)) ) * 0.25;
-  vec4 d  = d0*0.60 + d1*0.28 + d2*0.12;
-  /* smoothstep feathered edge */
-  float a  = smoothstep(0.0, 0.35, d.a * 2.0);
+  vec3  bg = vec3(0.941, 0.918, 0.847);   /* #f0ead8 */
+  vec2  ts = 1.0 / vec2(textureSize(uDye, 0));
+  /* 5-tap cross blur on dye for softer visual edges */
+  vec4 d  = texture(uDye, vUv) * 0.40
+           + texture(uDye, vUv + vec2(ts.x,  0.0)) * 0.15
+           + texture(uDye, vUv - vec2(ts.x,  0.0)) * 0.15
+           + texture(uDye, vUv + vec2(0.0,  ts.y)) * 0.15
+           + texture(uDye, vUv - vec2(0.0,  ts.y)) * 0.15;
+  /* smoothstep gives natural feathered edge instead of hard clamp */
+  float a  = smoothstep(0.0, 0.4, d.a * 2.5);
   vec3 ink = (d.a > 0.0005) ? d.rgb / d.a : bg;
   fragColor = vec4(mix(bg, ink, a), 1.0);
 }\`;
@@ -596,31 +583,10 @@ function step() {
   blit(null);
 }
 
-/* ── Ambient flow — gentle random velocity every 30 frames ── */
-let ambientFrame = 0;
-function ambientFlow() {
-  ambientFrame++;
-  /* Velocity nudge every 20 frames */
-  if (ambientFrame % 20 === 0) {
-    const px = 0.1 + Math.random() * 0.8;
-    const py = 0.1 + Math.random() * 0.8;
-    const angle = Math.random() * Math.PI * 2;
-    const str = 0.00015 + Math.random() * 0.00020;
-    splatVelocity(px, py,
-      Math.cos(angle) * str, Math.sin(angle) * str, 0.004);
-  }
-  /* Tiny dye halo every 60 frames — ink naturally blooming in water */
-  if (ambientFrame % 60 === 0) {
-    const px = 0.15 + Math.random() * 0.70;
-    const py = 0.15 + Math.random() * 0.70;
-    splatDye(px, py, INKS[inkIdx], 0.012, 0.008);
-  }
-}
-
 /* ── Animation loop ──────────────────────── */
 (function loop() {
   requestAnimationFrame(loop);
-  try { ambientFlow(); step(); } catch(e) { console.error(e); }
+  try { step(); } catch(e) { console.error(e); }
 })();
 
 })();
