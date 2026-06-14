@@ -65,13 +65,25 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 <div id="hint" class="vtext">輕撫紙面攪墨&emsp;｜&emsp;按住滴墨</div>
 <div id="seal">墨</div>
 
-<!-- 左側說明文字 -->
-<div style="position:fixed;left:28px;top:42%;writing-mode:vertical-rl;font-family:serif;font-size:10px;letter-spacing:.25em;color:rgba(40,20,0,0.55);line-height:2.2;pointer-events:none;">
+<!-- Mode toggle (top-right, above title) -->
+<div id="mode-toggle" style="position:fixed;top:20px;right:68px;z-index:20;display:flex;gap:0;">
+  <button id="btn-mode-calli" style="font-family:serif;font-size:10px;letter-spacing:.15em;padding:4px 10px;background:rgba(40,20,0,0.12);border:1px solid rgba(40,20,0,0.22);border-right:none;border-radius:2px 0 0 2px;color:rgba(40,20,0,0.75);cursor:pointer;">書法</button>
+  <button id="btn-mode-fluid" style="font-family:serif;font-size:10px;letter-spacing:.15em;padding:4px 10px;background:none;border:1px solid rgba(40,20,0,0.22);border-radius:0 2px 2px 0;color:rgba(40,20,0,0.38);cursor:pointer;">墨流</button>
+</div>
+
+<!-- Grid toggle button (書法 mode only) -->
+<button id="btn-grid" style="position:fixed;bottom:32px;right:22px;font-family:serif;font-size:10px;letter-spacing:.15em;color:rgba(180,40,40,0.55);cursor:pointer;background:none;border:1px solid rgba(180,40,40,0.25);padding:4px 10px;border-radius:2px;z-index:20;">格線</button>
+
+<!-- SVG 九宮格 overlay (hidden by default) -->
+<svg id="grid-overlay" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:5;display:none;"></svg>
+
+<!-- 左側說明文字 (書法 mode only) -->
+<div id="side-left" style="position:fixed;left:28px;top:42%;writing-mode:vertical-rl;font-family:serif;font-size:10px;letter-spacing:.25em;color:rgba(40,20,0,0.55);line-height:2.2;pointer-events:none;">
 輕撫水面<br>墨韻自生<br>｜<br>按住注墨<br>拖曳成渦<br>放手淡出
 </div>
 
-<!-- 右側技術說明 -->
-<div style="position:fixed;right:22px;top:38%;writing-mode:vertical-rl;font-family:serif;font-size:9px;letter-spacing:.2em;color:rgba(40,20,0,0.48);line-height:2.4;pointer-events:none;">
+<!-- 右側技術說明 (墨流 mode only) -->
+<div id="side-right" style="position:fixed;right:22px;top:38%;writing-mode:vertical-rl;font-family:serif;font-size:9px;letter-spacing:.2em;color:rgba(40,20,0,0.48);line-height:2.4;pointer-events:none;">
 WebGL2　Fluid Simulation<br>Navier-Stokes　方程式<br>速度場　壓力場　染料場<br>512×512　浮點紋理<br>即時　60Hz　渲染
 </div>
 
@@ -517,6 +529,92 @@ window.addEventListener('touchmove', e => {
 document.getElementById('btn-clear').onclick = () => {
   initFBOs();
 };
+
+/* ── Mode switching ──────────────────────── */
+let currentMode = 'calli';   // 'calli' | 'fluid'
+let gridVisible = false;
+let gridWasVisible = false;  // remember grid state across mode switches
+
+const btnCalli   = document.getElementById('btn-mode-calli');
+const btnFluid   = document.getElementById('btn-mode-fluid');
+const btnGrid    = document.getElementById('btn-grid');
+const gridSVG    = document.getElementById('grid-overlay');
+const sideLeft   = document.getElementById('side-left');
+const sideRight  = document.getElementById('side-right');
+
+function buildGrid() {
+  const size = Math.min(window.innerWidth, window.innerHeight) * 0.72;
+  const cell = size / 3;
+  gridSVG.setAttribute('width',  size);
+  gridSVG.setAttribute('height', size);
+  gridSVG.style.width  = size + 'px';
+  gridSVG.style.height = size + 'px';
+
+  let svg = '';
+  /* Outer frame */
+  svg += \`<rect x="0" y="0" width="\${size}" height="\${size}" stroke="#c0403a" stroke-width="1.5" fill="none"/>\`;
+  /* Inner grid lines (4-tap: 2 horizontal + 2 vertical) */
+  for (let i = 1; i < 3; i++) {
+    svg += \`<line x1="\${cell*i}" y1="0" x2="\${cell*i}" y2="\${size}" stroke="#c0403a" stroke-width="0.8" opacity="0.6"/>\`;
+    svg += \`<line x1="0" y1="\${cell*i}" x2="\${size}" y2="\${cell*i}" stroke="#c0403a" stroke-width="0.8" opacity="0.6"/>\`;
+  }
+  /* Diagonal helper lines in each cell */
+  for (let row = 0; row < 3; row++) {
+    for (let col = 0; col < 3; col++) {
+      const x0 = col * cell, y0 = row * cell;
+      const x1 = x0 + cell, y1 = y0 + cell;
+      svg += \`<line x1="\${x0}" y1="\${y0}" x2="\${x1}" y2="\${y1}" stroke="#c0403a" stroke-width="0.4" opacity="0.3" stroke-dasharray="4,4"/>\`;
+      svg += \`<line x1="\${x1}" y1="\${y0}" x2="\${x0}" y2="\${y1}" stroke="#c0403a" stroke-width="0.4" opacity="0.3" stroke-dasharray="4,4"/>\`;
+    }
+  }
+  gridSVG.innerHTML = svg;
+}
+
+function showGrid(on) {
+  gridVisible = on;
+  gridSVG.style.display = on ? 'block' : 'none';
+  if (on) buildGrid();
+  btnGrid.style.background = on ? 'rgba(180,40,40,0.10)' : 'none';
+}
+
+function setMode(mode) {
+  currentMode = mode;
+
+  if (mode === 'calli') {
+    /* 書法 mode */
+    btnCalli.style.background = 'rgba(40,20,0,0.12)';
+    btnCalli.style.color = 'rgba(40,20,0,0.75)';
+    btnFluid.style.background = 'none';
+    btnFluid.style.color = 'rgba(40,20,0,0.38)';
+    btnGrid.style.display  = 'block';
+    sideLeft.style.display = 'block';
+    sideRight.style.display = 'none';
+    /* Restore previous grid state */
+    showGrid(gridWasVisible);
+  } else {
+    /* 墨流 mode */
+    btnFluid.style.background = 'rgba(40,20,0,0.12)';
+    btnFluid.style.color = 'rgba(40,20,0,0.75)';
+    btnCalli.style.background = 'none';
+    btnCalli.style.color = 'rgba(40,20,0,0.38)';
+    btnGrid.style.display  = 'none';
+    sideLeft.style.display = 'none';
+    sideRight.style.display = 'block';
+    /* Save & hide grid */
+    gridWasVisible = gridVisible;
+    showGrid(false);
+  }
+}
+
+btnCalli.onclick = () => setMode('calli');
+btnFluid.onclick = () => setMode('fluid');
+btnGrid.onclick  = () => showGrid(!gridVisible);
+
+/* Rebuild grid on resize */
+window.addEventListener('resize', () => { if (gridVisible) buildGrid(); });
+
+/* Init in 書法 mode */
+setMode('calli');
 
 /* ═══════════════════════════════════════════
    Main simulation step
