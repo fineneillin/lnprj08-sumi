@@ -537,7 +537,7 @@ window.addEventListener('mousemove', e => {
       const ux = mx / W, uy = 1.0 - my / H;
       const dvx = (mx - pmx) / W;
       const dvy = -(my - pmy) / H;
-      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 0.7, 0.55);
+      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 1.4, 0.45);
       splatVelocity(ux, uy, dvx * 6.0, dvy * 6.0, 0.0005);
     } else {
       /* Calli mode: interpolated splats */
@@ -588,10 +588,10 @@ window.addEventListener('mousedown', e => {
       const oy = Math.sin(a) * 0.03;
       const vx = Math.cos(a) * 0.3 * 1.8;
       const vy = Math.sin(a) * 0.3 * 1.8;
-      splatDye(ux + ox, uy + oy, INKS[inkIdx], splatR * 0.6, 0.6);
+      splatDye(ux + ox, uy + oy, INKS[inkIdx], splatR * 0.75, 0.6);
       splatVelocity(ux + ox, uy + oy, vx, vy, 0.0006);
     }
-    splatDye(ux, uy, INKS[inkIdx], splatR * 0.9, 1.0);
+    splatDye(ux, uy, INKS[inkIdx], splatR * 1.1, 1.0);
   } else {
     /* Calli mode: single drop + random velocity */
     splatDye(ux, uy, INKS[inkIdx], 0.0006 * getRadiusMult(), 1.0);
@@ -780,7 +780,7 @@ function step() {
       splatVelocity(ux, uy, fx * 9.0, fy * 9.0, 0.0005);
     } else if (!isDown && currentMode !== 'calli') {
       /* Hover only (fluid mode): gentle velocity × 1.8 */
-      splatVelocity(ux, uy, fx * 8.1, fy * 8.1, 0.0015);
+      splatVelocity(ux, uy, fx * 4.86, fy * 4.86, 0.0015);
     }
   }
   pmx = mx; pmy = my;
