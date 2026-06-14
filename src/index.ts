@@ -89,8 +89,8 @@ let inkIdx = 0;
 
 /* ── Simulation constants ────────────────── */
 const SIM      = 512;
-const DISS_VEL = 0.98;
-const DISS_DYE = 0.997;
+const DISS_VEL = 0.975;
+const DISS_DYE = 0.982;
 const DISS_P   = 0.8;
 const P_ITER   = 30;
 
@@ -160,7 +160,7 @@ void main(){
                  + texture(uSource, vUv - vec2(ts.x,  0.0))
                  + texture(uSource, vUv + vec2(0.0,  ts.y))
                  + texture(uSource, vUv - vec2(0.0,  ts.y));
-  result = mix(result, neighbors * 0.25, 0.18);
+  result = mix(result, neighbors * 0.25, 0.35);
   fragColor = result;
 }\`;
 
@@ -583,10 +583,24 @@ function step() {
   blit(null);
 }
 
+/* ── Ambient flow — gentle random velocity every 30 frames ── */
+let ambientFrame = 0;
+function ambientFlow() {
+  ambientFrame++;
+  if (ambientFrame % 30 !== 0) return;
+  const W = canvas.width, H = canvas.height;
+  const px = (0.1 + Math.random() * 0.8);
+  const py = (0.1 + Math.random() * 0.8);
+  const angle = Math.random() * Math.PI * 2;
+  const str = 0.00008 + Math.random() * 0.00012;   /* gentle UV-space force */
+  splatVelocity(px, py,
+    Math.cos(angle) * str, Math.sin(angle) * str, 0.004);
+}
+
 /* ── Animation loop ──────────────────────── */
 (function loop() {
   requestAnimationFrame(loop);
-  try { step(); } catch(e) { console.error(e); }
+  try { ambientFlow(); step(); } catch(e) { console.error(e); }
 })();
 
 })();
