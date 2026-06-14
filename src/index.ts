@@ -225,7 +225,7 @@ void main(){
   float R = texture(uVelocity, vUv + vec2(uTexelSize.x, 0.0)).y;
   float T = texture(uVelocity, vUv + vec2(0.0, uTexelSize.y)).x;
   float B = texture(uVelocity, vUv - vec2(0.0, uTexelSize.y)).x;
-  fragColor = vec4(R - L - T + B, 0.0, 0.0, 1.0);
+  fragColor = vec4((R - L - T + B) * 1.5, 0.0, 0.0, 1.0);
 }\`;
 
 /* Vorticity – confinement pass (convert curl to velocity force) */
@@ -364,7 +364,7 @@ void main(){
               + texture(uDye, vUv - vec2(0.0, ts.y*7.0)) ) * 0.25;
     d = d0*0.50 + d1*0.32 + d2*0.18;
   }
-  float alpha = smoothstep(0.0, 0.3, d.a * 3.5);
+  float alpha = smoothstep(0.0, 0.25, d.a * 4.5);
   vec3 ink    = (d.a > 0.0005) ? d.rgb / d.a : paper;
   vec3 color  = mix(paper, ink, alpha);
 
@@ -373,7 +373,7 @@ void main(){
     vec2 vel    = texture(uVelocity, vUv).xy;
     float vMag  = length(vel) * 8.0;
     vec3 velCol = mix(vec3(0.88, 0.87, 0.84), vec3(0.72, 0.76, 0.82), clamp(vMag, 0.0, 1.0));
-    color = mix(color, velCol, clamp(vMag * 0.35, 0.0, 0.4) * (1.0 - alpha));
+    color = mix(color, velCol, clamp(vMag * 0.45, 0.0, 0.4) * (1.0 - alpha));
   }
 
   fragColor = vec4(color, 1.0);
@@ -587,7 +587,7 @@ window.addEventListener('mousemove', e => {
     const spd = Math.sqrt(ddx * ddx + ddy * ddy);
     if (spd > 0.5) {
       const ux = mx / W, uy = 1.0 - my / H;
-      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 0.4, 0.012);
+      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 0.4, 0.008);
     }
   }
 });
@@ -736,8 +736,8 @@ function setMode(mode) {
   } else {
     /* 墨流 mode */
     DISS_DYE     = 0.972;
-    DISS_VEL     = 0.988;
-    DISS_DYE     = 0.985;
+    DISS_VEL     = 0.968;
+    DISS_DYE     = 0.955;
     dyeDiffusion = 0.42;
     calliMode    = false;
     btnFluid.style.background = 'rgba(40,20,0,0.12)';
@@ -855,7 +855,7 @@ function step() {
     gl.uniform1i(pVorticity.u('uVelocity'),     0);
     gl.uniform1i(pVorticity.u('uCurl'),          1);
     gl.uniform2f(pVorticity.u('uTexelSize'),     ts[0], ts[1]);
-    gl.uniform1f(pVorticity.u('uCurlStrength'),  28.0);
+    gl.uniform1f(pVorticity.u('uCurlStrength'),  55.0);
     gl.uniform1f(pVorticity.u('uDt'),            0.016);
     bindTex(velocity.read.tex, 0);
     bindTex(curlFBO.tex,       1);
