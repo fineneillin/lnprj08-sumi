@@ -90,7 +90,7 @@ let inkIdx = 0;
 /* ── Simulation constants ────────────────── */
 const SIM      = 512;
 const DISS_VEL = 0.98;
-const DISS_DYE = 0.995;
+const DISS_DYE = 0.997;
 const DISS_P   = 0.8;
 const P_ITER   = 30;
 
@@ -128,7 +128,7 @@ void main(){
   gl_Position = vec4(aPos, 0.0, 1.0);
 }\`;
 
-/* Pass 1 – Semi-Lagrangian advection (shared for vel + dye) */
+/* Pass 1a – Semi-Lagrangian advection for velocity */
 const FS_ADVECT = \`#version 300 es
 precision highp float;
 uniform sampler2D uVelocity;
@@ -140,6 +140,28 @@ void main(){
   vec2 vel    = texture(uVelocity, vUv).xy;
   vec2 coord  = vUv - vel;
   fragColor   = uDissipation * texture(uSource, coord);
+}\`;
+
+/* Pass 1b – Dye advection with Laplacian diffusion for soft blending */
+const FS_DYE_ADVECT = \`#version 300 es
+precision highp float;
+uniform sampler2D uVelocity;
+uniform sampler2D uSource;
+uniform float     uDissipation;
+in vec2 vUv;
+out vec4 fragColor;
+void main(){
+  vec2 ts     = 1.0 / vec2(textureSize(uSource, 0));
+  vec2 vel    = texture(uVelocity, vUv).xy;
+  vec2 coord  = vUv - vel;
+  vec4 result = uDissipation * texture(uSource, coord);
+  /* Laplacian diffusion — softens colour boundaries */
+  vec4 neighbors = texture(uSource, vUv + vec2(ts.x,  0.0))
+                 + texture(uSource, vUv - vec2(ts.x,  0.0))
+                 + texture(uSource, vUv + vec2(0.0,  ts.y))
+                 + texture(uSource, vUv - vec2(0.0,  ts.y));
+  result = mix(result, neighbors * 0.25, 0.18);
+  fragColor = result;
 }\`;
 
 /* Pass 2a – Divergence */
@@ -227,16 +249,23 @@ void main(){
   fragColor = b + vec4(uColor * s, s);
 }\`;
 
-/* Final display pass */
+/* Final display pass — blurred sampling + smoothstep alpha */
 const FS_DISPLAY = \`#version 300 es
 precision highp float;
 uniform sampler2D uDye;
 in vec2 vUv;
 out vec4 fragColor;
 void main(){
-  vec3 bg  = vec3(0.941, 0.918, 0.847);   /* #f0ead8 */
-  vec4 d   = texture(uDye, vUv);
-  float a  = clamp(d.a * 3.0, 0.0, 1.0);
+  vec3  bg = vec3(0.941, 0.918, 0.847);   /* #f0ead8 */
+  vec2  ts = 1.0 / vec2(textureSize(uDye, 0));
+  /* 5-tap cross blur on dye for softer visual edges */
+  vec4 d  = texture(uDye, vUv) * 0.40
+           + texture(uDye, vUv + vec2(ts.x,  0.0)) * 0.15
+           + texture(uDye, vUv - vec2(ts.x,  0.0)) * 0.15
+           + texture(uDye, vUv + vec2(0.0,  ts.y)) * 0.15
+           + texture(uDye, vUv - vec2(0.0,  ts.y)) * 0.15;
+  /* smoothstep gives natural feathered edge instead of hard clamp */
+  float a  = smoothstep(0.0, 0.4, d.a * 2.5);
   vec3 ink = (d.a > 0.0005) ? d.rgb / d.a : bg;
   fragColor = vec4(mix(bg, ink, a), 1.0);
 }\`;
@@ -313,13 +342,14 @@ function doubleFBO(w, h, iFmt, fmt, type, filter) {
 }
 
 /* ── Compile programs ────────────────────── */
-const pAdvect   = createProgram(VS, FS_ADVECT);
-const pDiv      = createProgram(VS, FS_DIV);
-const pPressure = createProgram(VS, FS_PRESSURE);
-const pGrad     = createProgram(VS, FS_GRAD);
-const pVelSplat = createProgram(VS, FS_VEL_SPLAT);
-const pDyeSplat = createProgram(VS, FS_DYE_SPLAT);
-const pDisplay  = createProgram(VS, FS_DISPLAY);
+const pAdvect    = createProgram(VS, FS_ADVECT);
+const pDyeAdvect = createProgram(VS, FS_DYE_ADVECT);
+const pDiv       = createProgram(VS, FS_DIV);
+const pPressure  = createProgram(VS, FS_PRESSURE);
+const pGrad      = createProgram(VS, FS_GRAD);
+const pVelSplat  = createProgram(VS, FS_VEL_SPLAT);
+const pDyeSplat  = createProgram(VS, FS_DYE_SPLAT);
+const pDisplay   = createProgram(VS, FS_DISPLAY);
 
 /* ── Field FBOs ──────────────────────────── */
 let velocity, pressure, divFBO, dye;
@@ -509,8 +539,11 @@ function step() {
   blit(velocity.write);
   velocity.swap();
 
-  /* ── Pass 1b: Advect dye ─── */
-  gl.uniform1f(pAdvect.u('uDissipation'), DISS_DYE);
+  /* ── Pass 1b: Advect dye (with Laplacian diffusion) ─── */
+  pDyeAdvect.use();
+  gl.uniform1i(pDyeAdvect.u('uVelocity'),    0);
+  gl.uniform1i(pDyeAdvect.u('uSource'),      1);
+  gl.uniform1f(pDyeAdvect.u('uDissipation'), DISS_DYE);
   bindTex(velocity.read.tex, 0);
   bindTex(dye.read.tex,      1);
   blit(dye.write);
