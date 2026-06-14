@@ -526,21 +526,13 @@ window.addEventListener('mousemove', e => {
 
   if (isDown) {
     if (currentMode !== 'calli') {
-      /* Fluid mode: single large-radius splat every 3 frames, radial velocity */
-      if (frameCount % 3 === 0) {
-        const W = canvas.width, H = canvas.height;
-        const ux = mx / W, uy = 1.0 - my / H;
-        const dvx = (mx - pmx) / W;
-        const dvy = -(my - pmy) / H;
-        const spd = Math.sqrt(dvx * dvx + dvy * dvy);
-        const angle = Math.random() * Math.PI * 2;
-        const radialVx = Math.cos(angle) * spd * 0.4;
-        const radialVy = Math.sin(angle) * spd * 0.4;
-        const finalVx = (radialVx * 0.6 + dvx * 0.4) * 9.0;
-        const finalVy = (radialVy * 0.6 + dvy * 0.4) * 9.0;
-        splatDye(ux, uy, INKS[inkIdx], 0.0003 * 2.5, 1.0);
-        splatVelocity(ux, uy, finalVx, finalVy, 0.0005);
-      }
+      /* Fluid mode: continuous splat, movement-direction velocity */
+      const W = canvas.width, H = canvas.height;
+      const ux = mx / W, uy = 1.0 - my / H;
+      const dvx = (mx - pmx) / W;
+      const dvy = -(my - pmy) / H;
+      splatDye(ux, uy, INKS[inkIdx], 0.0003 * 1.2, 0.55);
+      splatVelocity(ux, uy, dvx * 6.0, dvy * 6.0, 0.0005);
     } else {
       /* Calli mode: interpolated splats */
       if (lastSplatX >= 0) {
