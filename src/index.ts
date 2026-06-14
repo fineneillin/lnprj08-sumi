@@ -57,6 +57,7 @@ canvas{display:block;position:fixed;inset:0;width:100%;height:100%}
 <script src="https://lnprj.neillin-lct.workers.dev/lnprj-nav.js"></script>
 </head>
 <body>
+<a href="https://lnprj.neillin-lct.workers.dev/" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);font-family:serif;font-size:11px;letter-spacing:.2em;color:rgba(40,20,0,0.3);text-decoration:none;z-index:100;white-space:nowrap;">LNPRJ</a>
 <canvas id="c"></canvas>
 
 <button id="btn-clear">洗&emsp;硯</button>
