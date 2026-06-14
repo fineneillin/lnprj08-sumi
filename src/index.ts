@@ -96,6 +96,13 @@ WebGL2　Fluid Simulation<br>Navier-Stokes　方程式<br>速度場　壓力場�
   <div class="swatch"     id="sw2" style="background:#3d0e0e" title="朱墨"></div>
 </div>
 
+<!-- Brush size selector (書法 mode only) -->
+<div id="brush-size-ui" style="position:fixed;bottom:20px;right:80px;display:none;align-items:center;gap:10px;z-index:10;">
+  <div class="brush-opt" data-size="fine"  title="細筆" style="width:6px;height:6px;border-radius:50%;background:rgba(40,20,0,0.5);cursor:pointer;border:1.5px solid transparent;flex-shrink:0;"></div>
+  <div class="brush-opt" data-size="mid"   title="中筆" style="width:11px;height:11px;border-radius:50%;background:rgba(40,20,0,0.5);cursor:pointer;border:1.5px solid transparent;flex-shrink:0;"></div>
+  <div class="brush-opt" data-size="thick" title="粗筆" style="width:18px;height:18px;border-radius:50%;background:rgba(40,20,0,0.5);cursor:pointer;border:1.5px solid rgba(40,20,0,0.6);flex-shrink:0;"></div>
+</div>
+
 <svg id="cursor" width="18" height="18" viewBox="0 0 18 18">
   <circle cx="9" cy="9" r="2.8" fill="rgba(12,6,2,0.80)"/>
   <circle cx="9" cy="9" r="7.5" fill="none" stroke="rgba(12,6,2,0.18)" stroke-width="1"/>
@@ -119,6 +126,12 @@ let DISS_VEL = 0.965;
 let DISS_DYE = 0.972;
 const DISS_P   = 0.8;
 const P_ITER   = 30;
+
+/* ── Brush / mode state ──────────────────── */
+let dyeDiffusion = 0.0;   // 0 in calli, 0.42 in fluid
+let calliMode    = true;
+let brushSize    = 'thick';
+const BRUSH_SCALE = { fine: 0.30, mid: 0.50, thick: 0.70 };
 
 /* ── Canvas ──────────────────────────────── */
 const canvas = document.getElementById('c');
@@ -174,6 +187,7 @@ precision highp float;
 uniform sampler2D uVelocity;
 uniform sampler2D uSource;
 uniform float     uDissipation;
+uniform float     uDiffusion;
 in vec2 vUv;
 out vec4 fragColor;
 void main(){
@@ -181,12 +195,12 @@ void main(){
   vec2 vel    = texture(uVelocity, vUv).xy;
   vec2 coord  = vUv - vel;
   vec4 result = uDissipation * texture(uSource, coord);
-  /* Laplacian diffusion — softens colour boundaries */
+  /* Laplacian diffusion — softens colour boundaries (0 = off in calli mode) */
   vec4 neighbors = texture(uSource, vUv + vec2(ts.x,  0.0))
                  + texture(uSource, vUv - vec2(ts.x,  0.0))
                  + texture(uSource, vUv + vec2(0.0,  ts.y))
                  + texture(uSource, vUv - vec2(0.0,  ts.y));
-  result = mix(result, neighbors * 0.25, 0.42);
+  result = mix(result, neighbors * 0.25, uDiffusion);
   fragColor = result;
 }\`;
 
@@ -279,25 +293,29 @@ void main(){
 const FS_DISPLAY = \`#version 300 es
 precision highp float;
 uniform sampler2D uDye;
+uniform bool      uCalliMode;
 in vec2 vUv;
 out vec4 fragColor;
 void main(){
   vec3 bg  = vec3(0.941, 0.918, 0.847);   /* #f0ead8 */
-  vec2 ts  = 1.0 / vec2(textureSize(uDye, 0));
-  /* Layer 0 — centre */
-  vec4 d0 = texture(uDye, vUv);
-  /* Layer 1 — radius 3 texels */
-  vec4 d1 = ( texture(uDye, vUv + vec2(ts.x*3.0, 0.0))
-            + texture(uDye, vUv - vec2(ts.x*3.0, 0.0))
-            + texture(uDye, vUv + vec2(0.0, ts.y*3.0))
-            + texture(uDye, vUv - vec2(0.0, ts.y*3.0)) ) * 0.25;
-  /* Layer 2 — radius 7 texels (wide water-diffusion halo) */
-  vec4 d2 = ( texture(uDye, vUv + vec2(ts.x*7.0, 0.0))
-            + texture(uDye, vUv - vec2(ts.x*7.0, 0.0))
-            + texture(uDye, vUv + vec2(0.0, ts.y*7.0))
-            + texture(uDye, vUv - vec2(0.0, ts.y*7.0)) ) * 0.25;
-  vec4 d  = d0*0.50 + d1*0.32 + d2*0.18;
-  /* wider smoothstep for feathered edge */
+  vec4 d;
+  if (uCalliMode) {
+    /* 書法 mode: no blur, crisp strokes */
+    d = texture(uDye, vUv);
+  } else {
+    /* 墨流 mode: 3-layer radial blur for watercolour halo */
+    vec2 ts  = 1.0 / vec2(textureSize(uDye, 0));
+    vec4 d0 = texture(uDye, vUv);
+    vec4 d1 = ( texture(uDye, vUv + vec2(ts.x*3.0, 0.0))
+              + texture(uDye, vUv - vec2(ts.x*3.0, 0.0))
+              + texture(uDye, vUv + vec2(0.0, ts.y*3.0))
+              + texture(uDye, vUv - vec2(0.0, ts.y*3.0)) ) * 0.25;
+    vec4 d2 = ( texture(uDye, vUv + vec2(ts.x*7.0, 0.0))
+              + texture(uDye, vUv - vec2(ts.x*7.0, 0.0))
+              + texture(uDye, vUv + vec2(0.0, ts.y*7.0))
+              + texture(uDye, vUv - vec2(0.0, ts.y*7.0)) ) * 0.25;
+    d = d0*0.50 + d1*0.32 + d2*0.18;
+  }
   float a  = smoothstep(0.0, 0.55, d.a * 1.8);
   vec3 ink = (d.a > 0.0005) ? d.rgb / d.a : bg;
   fragColor = vec4(mix(bg, ink, a), 1.0);
@@ -489,7 +507,7 @@ window.addEventListener('mousedown', e => {
   /* Instant ink drop: large dye splat + tiny random velocity */
   const W = canvas.width, H = canvas.height;
   const ux = mx / W, uy = 1.0 - my / H;
-  splatDye(ux, uy, INKS[inkIdx], 0.0006, 1.0);
+  splatDye(ux, uy, INKS[inkIdx], 0.0006 * BRUSH_SCALE[brushSize], 1.0);
   const a = Math.random() * Math.PI * 2;
   splatVelocity(ux, uy,
     Math.cos(a) * 0.003, Math.sin(a) * 0.003, 0.0008);
@@ -506,7 +524,7 @@ window.addEventListener('touchstart', e => {
   hintEl.style.opacity = '0';
   const W = canvas.width, H = canvas.height;
   const ux = mx / W, uy = 1.0 - my / H;
-  splatDye(ux, uy, INKS[inkIdx], 0.0006, 1.0);
+  splatDye(ux, uy, INKS[inkIdx], 0.0006 * BRUSH_SCALE[brushSize], 1.0);
   const a = Math.random() * Math.PI * 2;
   splatVelocity(ux, uy, Math.cos(a)*0.003, Math.sin(a)*0.003, 0.0008);
 }, { passive: false });
@@ -553,6 +571,18 @@ const btnWashCalli = document.getElementById('btn-wash-calli');
 const gridSVG      = document.getElementById('grid-overlay');
 const sideLeft     = document.getElementById('side-left');
 const sideRight    = document.getElementById('side-right');
+const brushUI      = document.getElementById('brush-size-ui');
+
+/* ── Brush size selector ─────────────────── */
+document.querySelectorAll('.brush-opt').forEach(el => {
+  el.addEventListener('click', () => {
+    brushSize = el.dataset.size;
+    document.querySelectorAll('.brush-opt').forEach(b => {
+      b.style.border = '1.5px solid transparent';
+    });
+    el.style.border = '1.5px solid rgba(40,20,0,0.6)';
+  });
+});
 
 function updateGrid() {
   if (!gridVisible) return;
@@ -591,27 +621,33 @@ function setMode(mode) {
   currentMode = mode;
 
   if (mode === 'calli') {
-    /* 書法 mode: permanent ink, no hover velocity */
-    DISS_DYE = 1.0;
-    DISS_VEL = 0.001;
+    /* 書法 mode: permanent ink, no hover velocity, no diffusion/blur */
+    DISS_DYE     = 1.0;
+    DISS_VEL     = 0.001;
+    dyeDiffusion = 0.0;
+    calliMode    = true;
     btnCalli.style.background = 'rgba(40,20,0,0.12)';
     btnCalli.style.color      = 'rgba(40,20,0,0.75)';
     btnFluid.style.background = 'none';
     btnFluid.style.color      = 'rgba(40,20,0,0.38)';
     btnGrid.style.display      = 'block';
     btnWashCalli.style.display = 'block';
+    brushUI.style.display      = 'flex';
     sideLeft.style.display     = 'none';
     sideRight.style.display    = 'none';
   } else {
     /* 墨流 mode */
-    DISS_DYE = 0.972;
-    DISS_VEL = 0.965;
+    DISS_DYE     = 0.972;
+    DISS_VEL     = 0.965;
+    dyeDiffusion = 0.42;
+    calliMode    = false;
     btnFluid.style.background = 'rgba(40,20,0,0.12)';
     btnFluid.style.color      = 'rgba(40,20,0,0.75)';
     btnCalli.style.background = 'none';
     btnCalli.style.color      = 'rgba(40,20,0,0.38)';
     btnGrid.style.display      = 'none';
     btnWashCalli.style.display = 'none';
+    brushUI.style.display      = 'none';
     sideLeft.style.display     = 'block';
     sideRight.style.display    = 'block';
     /* Clear canvas when switching to fluid */
@@ -651,7 +687,7 @@ function step() {
     if (isDown) {
       /* Press + drag: strong velocity + dense dye */
       splatVelocity(ux, uy, fx * 5.0, fy * 5.0, 0.0005);
-      splatDye(ux, uy, INKS[inkIdx], 0.0003, 1.0);
+      splatDye(ux, uy, INKS[inkIdx], 0.0003 * BRUSH_SCALE[brushSize], 1.0);
     } else if (currentMode !== 'calli') {
       /* Hover only (fluid mode): gentle velocity disturbance, no dye */
       splatVelocity(ux, uy, fx * 1.8, fy * 1.8, 0.0015);
@@ -674,6 +710,7 @@ function step() {
   gl.uniform1i(pDyeAdvect.u('uVelocity'),    0);
   gl.uniform1i(pDyeAdvect.u('uSource'),      1);
   gl.uniform1f(pDyeAdvect.u('uDissipation'), DISS_DYE);
+  gl.uniform1f(pDyeAdvect.u('uDiffusion'),   dyeDiffusion);
   bindTex(velocity.read.tex, 0);
   bindTex(dye.read.tex,      1);
   blit(dye.write);
@@ -709,6 +746,7 @@ function step() {
   /* ── Pass 4: Render dye to canvas ─── */
   pDisplay.use();
   gl.uniform1i(pDisplay.u('uDye'), 0);
+  gl.uniform1i(pDisplay.u('uCalliMode'), calliMode ? 1 : 0);
   bindTex(dye.read.tex, 0);
   blit(null);
 }
